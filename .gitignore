@@ -1,3 +1,10 @@
+*.xml
+*.flv
+*.download
+*.mp4
+*.json
+*.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
