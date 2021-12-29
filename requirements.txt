@@ -1,0 +1,5 @@
+you_get
+requests
+bs4
+typer
+ffmpeg
