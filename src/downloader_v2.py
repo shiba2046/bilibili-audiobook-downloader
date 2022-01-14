@@ -1,3 +1,4 @@
+
 import typer
 import json
 import requests
@@ -10,7 +11,6 @@ import multiprocessing as mp
 app = typer.Typer()
 
 
-
 class Book(object):
     def __init__(self, book_data: dict):
         self.video_data = book_data
@@ -19,8 +19,6 @@ class Book(object):
         self.desc = book_data['desc']
         self.video_id = book_data['bvid']
         self.episodes = [Episode(x, self) for x in book_data['pages']]
-
-
     
         self.title = book_data['title']
         if len(self.title) > 10:
@@ -45,11 +43,13 @@ class BilibiliAudiobookDownloader(object):
     def __init__(self, 
             url: str, 
             download_path: str = './download',
-            audio_path: str = './audio'):
-        url_parts = requests.utils.urlparse(url)
-        self.base_url = requests.utils.urlunparse((url_parts.scheme, url_parts.netloc, url_parts.path, "", "", ""))
-    
-        self.data = self.fetch_content_table(self.base_url)
+            audio_path: str = './audio',
+            book_title: str = None,
+            author: str = None,
+            dry_run: bool = False):
+
+        
+        self.data = self.fetch_content_table(url)
         self.video_data = self.data['videoData']
         # Create book
         self.book = Book(self.video_data)
@@ -63,6 +63,9 @@ class BilibiliAudiobookDownloader(object):
 
     def fetch_content_table(self, url: str):
         # Only keep the top most parts
+
+        url_parts = requests.utils.urlparse(url)
+        self.base_url = requests.utils.urlunparse((url_parts.scheme, url_parts.netloc, url_parts.path, "", "", ""))
 
         html = requests.get(url)
         
@@ -85,15 +88,15 @@ class BilibiliAudiobookDownloader(object):
         # temp = Path('./temp')
         # temp.mkdir(parents=True, exist_ok=True)
         # TODO: FOR DEBUGGING
-        with open(self.download_path / 'debug.html', 'w') as f:
-            f.write(text)
+        # with open(self.download_path / 'debug.html', 'w') as f:
+        #     f.write(text)
 
-        with open(self.download_path / 'debug.txt', 'w') as f:
-            f.write(text[start_pos:end_pos])
+        # with open(self.download_path / 'debug.txt', 'w') as f:
+        #     f.write(text[start_pos:end_pos])
 
-        filename = f'{self.download_path / self.book.title}.json' 
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(self.data, f, ensure_ascii=False, indent=4)        
+        # filename = f'{self.download_path / self.book.title}.json' 
+        # with open(filename, 'w', encoding='utf-8') as f:
+        #     json.dump(self.data, f, ensure_ascii=False, indent=4)        
         
         return json.loads(text[start_pos:end_pos])
 
@@ -125,7 +128,7 @@ class BilibiliAudiobookDownloader(object):
         out = (ffmpeg
             .input(download_file)
             .output(audio_file, vn=None, acodec='copy', **meta)
-            .overwrite_output()
+            # .overwrite_output()
             .global_args('-loglevel', 'quiet')
             .run()
         )
@@ -144,11 +147,13 @@ class BilibiliAudiobookDownloader(object):
             self.download_episode_mp(episode)
 
 @app.command()
-def run(url: str = None, 
+def download(
+    url: str = None, 
     download_path: str = './download', 
     audio_path: str = './audiobooks',
     book_title: str = None,
-    author: str = None
+    author: str = None,
+    dry_run: bool = False,
     ):
     
     if url is None:
@@ -156,12 +161,54 @@ def run(url: str = None,
     
     b = BilibiliAudiobookDownloader(url= url, 
             download_path= download_path, 
-            audio_path= audio_path
-            )
-    
-    # b.download_all_episodes()
-    b.download_all_episodes_mp()
+            audio_path= audio_path,
+            book_title= book_title,
+            author= author,
+            dry_run = dry_run)
 
+    
+    b.download_all_episodes()
+    # b.download_all_episodes_mp()
+    # b.download_episode(b.book.episodes[23])
+    # b.download_episode(b.book.episodes[26])
+
+@app.command()
+def extract_audio(path: str):
+    typer.echo(f"Extracting audio from {path}")
+    out = (ffmpeg
+        .input(path)
+        .output(f"{path}.m4b", vn=None, acodec='copy')
+        .overwrite_output()
+        .global_args('-loglevel', 'quiet')
+        .run()
+    )
+
+@app.command()
+def down_sample(path: str):
+    path = Path(path)
+    if not path.exists():
+        typer.secho(f"{path} does not exist", fg="red")
+        typer.Exit(-1)
+    typer.echo(f"Downsizing {path}")
+
+    files = list(path.glob('*.m4b'))
+    typer.echo(f"Found {len(files)} files")
+
+    for file in files:
+        ffmpeg_64k(file)
+
+    # with mp.Pool(mp.cpu_count()) as pool:
+    #     pool.map(ffmpeg_64k, files)
+
+def ffmpeg_64k(file):
+    typer.echo(f"Downsampling {file}")
+    out = (ffmpeg
+        .input(file)
+        .output(f"{file.stem}.64k.m4b", ba='64k')
+        .global_args('-loglevel', 'quiet')
+        .run()
+    )
+    print(f"{file.stem}.64k.m4b")
 
 if __name__ == '__main__':
     app()
